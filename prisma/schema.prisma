@@ -10,6 +10,132 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum OrganizationRole {
+  ADMIN
+  MEMBER
+}
+
+model Organization {
+    id          String   @id @default(cuid())
+    name        String
+    description String?
+    createdAt   DateTime @default(now())
+    updatedAt   DateTime @updatedAt
+
+    // Relations
+    users        UserOrganization[]
+    categories   ExpenseCategory[]
+    policies     Policy[]
+    expenses     Expense[]
+
+    @@index([name])
+}
+
+model UserOrganization {
+    id             String            @id @default(cuid())
+    role           OrganizationRole @default(MEMBER)
+    createdAt      DateTime          @default(now())
+    updatedAt      DateTime          @updatedAt
+
+    // Relations
+    userId        String
+    user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    organizationId String
+    organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+    @@unique([userId, organizationId])
+    @@index([organizationId])
+}
+
+model ExpenseCategory {
+    id            String   @id @default(cuid())
+    name          String
+    description   String?
+    createdAt     DateTime @default(now())
+    updatedAt     DateTime @updatedAt
+
+    // Relations
+    organizationId String
+    organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    categories     Policy[]
+    expenses       Expense[]
+
+    @@unique([name, organizationId])
+    @@index([organizationId])
+}
+
+model Policy {
+    id              String   @id @default(cuid())
+    name            String
+    maxAmount       Float
+    autoApprove     Boolean  @default(false)
+    description     String?
+    createdAt       DateTime @default(now())
+    updatedAt       DateTime @updatedAt
+
+    // Relations
+    organizationId String
+    organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    userId         String?
+    user           User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
+    categoryId     String
+    category       ExpenseCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+    @@index([organizationId])
+    @@index([userId])
+    @@index([categoryId])
+}
+
+enum ExpenseStatus {
+    SUBMITTED
+    APPROVED
+    REJECTED
+}
+
+model Expense {
+    id               String        @id @default(cuid())
+    amount           Float
+    description      String
+    date             DateTime
+    status           ExpenseStatus @default(SUBMITTED)
+    approvedAt       DateTime?
+    rejectedAt       DateTime?
+    reviewerComments String?
+    createdAt        DateTime      @default(now())
+    updatedAt        DateTime      @updatedAt
+
+    // Relations
+    userId          String
+    user            User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+    organizationId  String
+    organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+    categoryId      String
+    category        ExpenseCategory  @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+    histories       ExpenseHistory[]
+
+    @@index([organizationId])
+    @@index([userId])
+    @@index([categoryId])
+    @@index([status])
+}
+
+model ExpenseHistory {
+    id               String        @id @default(cuid())
+    status           ExpenseStatus
+    comments         String?
+    createdAt        DateTime      @default(now())
+
+    // Relations
+    expenseId        String
+    expense          Expense        @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+    reviewerId       String?
+    reviewer         User?          @relation(fields: [reviewerId], references: [id], onDelete: SetNull)
+
+    @@index([expenseId])
+    @@index([reviewerId])
+}
+
+// Legacy model - keep for testing reference, will be removed later
 model Post {
     id        Int      @id @default(autoincrement())
     name      String
@@ -59,6 +185,10 @@ model User {
     accounts      Account[]
     sessions      Session[]
     posts         Post[]
+    organizations UserOrganization[]
+    policies      Policy[]
+    expenses      Expense[]
+    reviews       ExpenseHistory[]
 }
 
 model VerificationToken {

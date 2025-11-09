@@ -1,0 +1,560 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { organizationRouter } from "./organization";
+import { db } from "~/server/db";
+import { faker } from "@faker-js/faker";
+
+// Mock the database to use the transactional testing wrapper
+vi.mock("~/server/db");
+
+// Mock the auth module
+vi.mock("~/server/auth", () => ({
+  auth: vi.fn(),
+}));
+
+describe("OrganizationRouter", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("create", () => {
+    it("should create an organization successfully", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.create({
+        name: "Test Organization",
+        description: "A test organization",
+      });
+
+      expect(result.name).toEqual("Test Organization");
+      expect(result.description).toEqual("A test organization");
+
+      // Verify the organization was created
+      const organization = await db.organization.findUnique({
+        where: {
+          id: result.id,
+        },
+      });
+
+      expect(organization).toBeDefined();
+
+      // Verify user was added as admin
+      const membership = await db.userOrganization.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: user.id,
+            organizationId: result.id,
+          },
+        },
+      });
+
+      expect(membership?.role).toEqual("ADMIN");
+    });
+
+    it("should create organization without description", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.create({
+        name: "Simple Organization",
+      });
+
+      expect(result.name).toEqual("Simple Organization");
+      expect(result.description).toBeNull();
+    });
+  });
+
+  describe("getUserOrganizations", () => {
+    it("should return user's organizations", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      // Create test organizations
+      const org1 = await db.organization.create({
+        data: {
+          name: "Organization 1",
+          description: "First organization",
+        },
+      });
+
+      const org2 = await db.organization.create({
+        data: {
+          name: "Organization 2",
+          description: "Second organization",
+        },
+      });
+
+      // Add user to both organizations
+      await db.userOrganization.createMany({
+        data: [
+          {
+            userId: user.id,
+            organizationId: org1.id,
+            role: "ADMIN",
+          },
+          {
+            userId: user.id,
+            organizationId: org2.id,
+            role: "MEMBER",
+          },
+        ],
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.getUserOrganizations();
+
+      expect(result).toHaveLength(2);
+      expect(result.map((org) => org.name)).toContain("Organization 1");
+      expect(result.map((org) => org.name)).toContain("Organization 2");
+    });
+
+    it("should return empty array for user with no organizations", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.getUserOrganizations();
+
+      expect(result).toHaveLength(0);
+    });
+  });
+
+  describe("getOrganization", () => {
+    it("should return organization for member", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      await db.userOrganization.create({
+        data: {
+          userId: user.id,
+          organizationId: organization.id,
+          role: "MEMBER",
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.getOrganization({
+        organizationId: organization.id,
+      });
+
+      expect(result?.name).toEqual("Test Organization");
+    });
+
+    it("should throw error for non-member", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Test User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      await expect(
+        caller.getOrganization({ organizationId: organization.id }),
+      ).rejects.toThrow("Access denied: Not a member of this organization");
+    });
+  });
+
+  describe("inviteUser", () => {
+    it("should allow admin to invite user", async () => {
+      const admin = await db.user.create({
+        data: {
+          name: "Admin User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const userToInvite = await db.user.create({
+        data: {
+          name: "User to Invite",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      // Add admin as admin
+      await db.userOrganization.create({
+        data: {
+          userId: admin.id,
+          organizationId: organization.id,
+          role: "ADMIN",
+        },
+      });
+
+      const mockSession = {
+        user: admin,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.inviteUser({
+        organizationId: organization.id,
+        email: userToInvite.email!,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.user.email).toEqual(userToInvite.email);
+
+      // Verify membership was created
+      const membership = await db.userOrganization.findUnique({
+        where: {
+          userId_organizationId: {
+            userId: userToInvite.id,
+            organizationId: organization.id,
+          },
+        },
+      });
+
+      expect(membership?.role).toEqual("MEMBER");
+    });
+
+    it("should not allow member to invite user", async () => {
+      const member = await db.user.create({
+        data: {
+          name: "Member User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const userToInvite = await db.user.create({
+        data: {
+          name: "User to Invite",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      // Add user as member (not admin)
+      await db.userOrganization.create({
+        data: {
+          userId: member.id,
+          organizationId: organization.id,
+          role: "MEMBER",
+        },
+      });
+
+      const mockSession = {
+        user: member,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      await expect(
+        caller.inviteUser({
+          organizationId: organization.id,
+          email: userToInvite.email!,
+        }),
+      ).rejects.toThrow("Access denied: Only admins can invite users");
+    });
+
+    it("should throw error when inviting non-existent user", async () => {
+      const admin = await db.user.create({
+        data: {
+          name: "Admin User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      // Add admin as admin
+      await db.userOrganization.create({
+        data: {
+          userId: admin.id,
+          organizationId: organization.id,
+          role: "ADMIN",
+        },
+      });
+
+      const mockSession = {
+        user: admin,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      await expect(
+        caller.inviteUser({
+          organizationId: organization.id,
+          email: "nonexistent@example.com",
+        }),
+      ).rejects.toThrow("User with this email does not exist");
+    });
+
+    it("should throw error when inviting already member", async () => {
+      const admin = await db.user.create({
+        data: {
+          name: "Admin User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const existingMember = await db.user.create({
+        data: {
+          name: "Existing Member",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      // Add both users as members
+      await db.userOrganization.createMany({
+        data: [
+          {
+            userId: admin.id,
+            organizationId: organization.id,
+            role: "ADMIN",
+          },
+          {
+            userId: existingMember.id,
+            organizationId: organization.id,
+            role: "MEMBER",
+          },
+        ],
+      });
+
+      const mockSession = {
+        user: admin,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      await expect(
+        caller.inviteUser({
+          organizationId: organization.id,
+          email: existingMember.email!,
+        }),
+      ).rejects.toThrow("User is already a member of this organization");
+    });
+  });
+
+  describe("getMembers", () => {
+    it("should return organization members", async () => {
+      const user1 = await db.user.create({
+        data: {
+          name: "User 1",
+          email: faker.internet.email(),
+        },
+      });
+
+      const user2 = await db.user.create({
+        data: {
+          name: "User 2",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      // Add users to organization
+      await db.userOrganization.createMany({
+        data: [
+          {
+            userId: user1.id,
+            organizationId: organization.id,
+            role: "ADMIN",
+          },
+          {
+            userId: user2.id,
+            organizationId: organization.id,
+            role: "MEMBER",
+          },
+        ],
+      });
+
+      const mockSession = {
+        user: user1,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      const result = await caller.getMembers({
+        organizationId: organization.id,
+      });
+
+      expect(result).toHaveLength(2);
+      expect(result.map((m) => m.name)).toContain("User 1");
+      expect(result.map((m) => m.name)).toContain("User 2");
+      expect(result.find((m) => m.name === "User 1")?.role).toEqual("ADMIN");
+    });
+
+    it("should throw error for non-member", async () => {
+      const user = await db.user.create({
+        data: {
+          name: "Non-member User",
+          email: faker.internet.email(),
+        },
+      });
+
+      const organization = await db.organization.create({
+        data: {
+          name: "Test Organization",
+          description: "A test organization",
+        },
+      });
+
+      const mockSession = {
+        user,
+        expires: "2030-12-31T23:59:59.999Z",
+      };
+
+      const caller = organizationRouter.createCaller({
+        db: db,
+        session: mockSession,
+        headers: new Headers(),
+      });
+
+      await expect(
+        caller.getMembers({ organizationId: organization.id }),
+      ).rejects.toThrow("Access denied: Not a member of this organization");
+    });
+  });
+});
