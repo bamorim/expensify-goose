@@ -4,12 +4,12 @@
 
 - **Task ID**: `TASK-005`
 - **Title**: Implement expense category management APIs
-- **Status**: `Not Started`
+- **Status**: `Complete`
 - **Priority**: `P0`
 - **Created**: 2025-11-09
 - **Updated**: 2025-11-09
 - **Estimated Effort**: 2 hours
-- **Actual Effort**: 0 hours
+- **Actual Effort**: 1.5 hours
 
 ## Related Documents
 
@@ -22,33 +22,33 @@ Implement tRPC procedures for managing expense categories within organizations.
 
 ## Acceptance Criteria
 
-- [ ] createCategory API (admin only)
-- [ ] getCategories API
-- [ ] updateCategory API (admin only)
-- [ ] deleteCategory API (admin only)
-- [ ] Organization-scoped access control
+- [x] createCategory API (admin only)
+- [x] getCategories API
+- [x] updateCategory API (admin only)
+- [x] deleteCategory API (admin only)
+- [x] Organization-scoped access control
 
 ## TODOs
 
-- [ ] Create category tRPC router
-- [ ] Implement CRUD procedures
-- [ ] Add admin-only validation
-- [ ] Add input validation with Zod schemas
-- [ ] Write unit tests
+- [x] Create category tRPC router
+- [x] Implement CRUD procedures
+- [x] Add admin-only validation
+- [x] Add input validation with Zod schemas
+- [x] Write unit tests
 
 ## Progress Updates
 
 ### 2025-11-09 - goose
-**Status**: Not Started
-**Progress**: Task created
-**Blockers**: TASK-004 must be completed first
-**Next Steps**: Start after category model is ready
+**Status**: Complete
+**Progress**: Implemented complete CRUD APIs for expense categories with proper access control and validation.
+**Blockers**: None
+**Next Steps**: Move to TASK-006 (category UI)
 
 ## Completion Checklist
 
-- [ ] All acceptance criteria met
-- [ ] API security reviewed
-- [ ] Tests passing
+- [x] All acceptance criteria met
+- [x] API security reviewed
+- [x] Tests passing
 
 ---
 

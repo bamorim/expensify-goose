@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { api } from "~/trpc/react";
+import CategoriesManagement from "~/components/categories/CategoriesManagement";
 
 export default function OrganizationDetailPage() {
   const params = useParams();
@@ -254,6 +255,14 @@ export default function OrganizationDetailPage() {
             </div>
           </div>
         )}
+
+        {/* Categories Management */}
+        <div className="mb-8">
+          <CategoriesManagement 
+            organizationId={organizationId} 
+            userRole={organization.role as "ADMIN" | "MEMBER"} 
+          />
+        </div>
 
         {/* Quick Stats */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
